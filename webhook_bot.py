@@ -66,8 +66,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             })
             used.append(f["name"])
 
-        if used:
-            await bot.send_message(chat, "📄 Найдены файлы: " + ", ".join(used))
+        #if used:
+        #    await bot.send_message(chat, "📄 Найдены файлы: " + ", ".join(used))
 
         await bot.send_message(chat, "🤖 Спрашиваю GPT-5...")
 
