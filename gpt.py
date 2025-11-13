@@ -4,12 +4,7 @@ from config import OPENAI_API_KEY
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 def ask_gpt(question: str, attachments: list):
-    # базовый prompt
-    input_items = [
-        {"role": "user", "content": question}
-    ]
-
-    # добавляем файлы
+    input_items = [{"role": "user", "content": question}]
     for a in attachments:
         input_items.append({
             "role": "user",
@@ -20,13 +15,5 @@ def ask_gpt(question: str, attachments: list):
                 "filename": a["filename"]
             }
         })
-
-    # делаем запрос
-    resp = client.responses.create(
-        model="gpt-5",
-        input=input_items
-    )
-
-    # Универсальный способ получить текст
+    resp = client.responses.create(model="gpt-5", input=input_items)
     return resp.output_text
-

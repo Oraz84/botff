@@ -1,13 +1,7 @@
-# Telegram GPT-5 + Google Drive Bot (Render.com)
+# Telegram GPT-5 + Google Drive Webhook Bot for Render.com
 
-## Deployment
-1. Upload project to GitHub
-2. Create Render Web Service:
-   - Build: `pip install -r requirements.txt`
-   - Start: `python bot.py`
+Start command:
+uvicorn webhook_bot:app --host 0.0.0.0 --port 10000
 
-## ENV variables:
-- TELEGRAM_BOT_TOKEN
-- OPENAI_API_KEY
-- GOOGLE_DRIVE_FOLDER_ID
-- GOOGLE_SERVICE_ACCOUNT (json string)
+Webhook setup:
+https://api.telegram.org/bot<token>/setWebhook?url=https://botff-lax5.onrender.com/webhook
