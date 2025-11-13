@@ -1,92 +1,84 @@
 import logging
 from fastapi import FastAPI, Request
-from telegram import Update, Bot
-from telegram.ext import (
-    ApplicationBuilder,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
+from telegram import Bot, Update
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+
 from config import TELEGRAM_BOT_TOKEN
 from gpt import ask_gpt
-from gdrive import search_files, download_file
+from gdrive import search_files
 
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
-
-# Telegram bot
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-
-# --------------------------
-# INIT TELEGRAM APPLICATION
-# --------------------------
 initialized = False
 
 
-async def init_telegram_app():
+async def init_app():
     global initialized
     if not initialized:
+        logging.info("Initializing Telegram application...")
         await application.initialize()
         await application.start()
         initialized = True
+        logging.info("Telegram application initialized.")
 
 
-# --------------------------
-# WEBHOOK ENDPOINT
-# --------------------------
 @app.post("/webhook")
 async def webhook_handler(request: Request):
-    await init_telegram_app()
+    try:
+        await init_app()
 
-    data = await request.json()
-    update = Update.de_json(data, bot)
+        data = await request.json()
+        logging.info(f"Webhook update: {data}")
 
-    await application.process_update(update)
+        update = Update.de_json(data, bot)
+        await application.process_update(update)
+
+    except Exception as e:
+        logging.error(f"Webhook error: {e}", exc_info=True)
 
     return {"ok": True}
 
 
-# --------------------------
-# MESSAGE HANDLER
-# --------------------------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
+    chat = None
+    try:
+        if not update.message:
+            return
 
-    question = update.message.text
-    chat = update.message.chat_id
+        question = update.message.text
+        chat = update.message.chat_id
 
-    await bot.send_message(chat, "🔎 Ищу документы в Google Drive...")
+        await bot.send_message(chat, "🔎 Ищу документы в Google Drive...")
 
-    files = search_files(question)
-    attachments = []
-    used_files = []
+        files = search_files(question)
+        attachments = []
+        used = []
 
-    for f in files[:3]:
-        data = download_file(f["id"])
-        attachments.append({
-            "data": data,
-            "mime_type": f["mimeType"],
-            "filename": f["name"]
-        })
-        used_files.append(f["name"])
+        for f in files:
+            attachments.append({
+                "data": f["data"],
+                "mime_type": f["mimeType"],
+                "filename": f["name"],
+            })
+            used.append(f["name"])
 
-    await bot.send_message(chat, "🤖 Спрашиваю GPT-5...")
+        if used:
+            await bot.send_message(chat, "📄 Найдены файлы: " + ", ".join(used))
 
-    answer = ask_gpt(question, attachments)
+        await bot.send_message(chat, "🤖 Спрашиваю GPT-5...")
 
-    result = (
-        "📄 Файлы: " + ", ".join(used_files) +
-        "\n\n💡 Ответ:\n" + answer
-    )
+        answer = ask_gpt(question, attachments)
 
-    await bot.send_message(chat, result)
+        await bot.send_message(chat, answer)
+
+    except Exception as e:
+        logging.error(f"Handler error: {e}", exc_info=True)
+        if chat is not None:
+            await bot.send_message(chat, "❌ Произошла внутренняя ошибка. Смотрю логи.")
 
 
-# Register handler
-application.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-)
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

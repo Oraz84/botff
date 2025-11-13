@@ -8,8 +8,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # FREEDOM ASSISTANT — системный промпт
 # ============================================================
 
-SYSTEM_PROMPT = """
-Ты — Freedom Assistant, интеллектуальный помощник экосистемы Freedom Holding Corp.
+SYSTEM_PROMPT = """    Ты — Freedom Assistant, интеллектуальный помощник экосистемы Freedom Holding Corp.
 Ты работаешь как эксперт по всем направлениям холдинга и одновременно используешь
 подключённую базу знаний из Google Drive (RAG) через файлы, которые передаются в запросе.
 
@@ -40,36 +39,34 @@ SYSTEM_PROMPT = """
 =====================================================================
 3) Правила ответа:
 =====================================================================
-- Форматируй текст красиво: заголовки, списки, таблицы.
+- Форматируй текст структурированно: заголовки, списки, таблицы.
 - Если даёшь цены — делай разумные ориентиры.
 - Если не уверен — указывай диапазон.
 - Не придумывай несуществующие продукты или точные цифры.
-- Если вопрос сложный — делай краткий анализ.
+- Если вопрос сложный — делай краткий анализ и рекомендации.
 =====================================================================
 """
 
 
 # ============================================================
-# Конвертация документа из Google Drive в текст
+# Конвертация документов в текст
 # ============================================================
 
 def _attachments_to_text(attachments):
-    """
-    attachments = список:
+    """        attachments = список:
     [
         {
             "data": b"...",            # содержимое файла
-            "mime_type": "text/plain"  # MIME тип
+            "mime_type": "text/plain", # MIME тип
             "filename": "file.txt"     # имя файла
         }
     ]
-    """
-
-    if not attachments:
+    Превращаем файлы в текстовые блоки для промпта.
+    """        if not attachments:
         return ""
 
     result_parts = []
-    total_limit = 20000  # общая длина текста, чтобы не разрастался prompt
+    total_limit = 20000  # общий лимит текста в промпте
     consumed = 0
 
     for att in attachments:
@@ -77,13 +74,13 @@ def _attachments_to_text(attachments):
         name = att.get("filename", "file")
         mime = att.get("mime_type", "application/octet-stream")
 
-        # Пытаемся декодировать текст
+        # Пытаемся декодировать как UTF-8
         try:
             text = raw.decode("utf-8", errors="ignore")
         except Exception:
             text = ""
 
-        # Если бинарный файл — только заголовок
+        # Если не смогли извлечь текст — помечаем как бинарный
         if not text.strip():
             snippet = f"[Файл {name} ({mime}) — бинарный, текст извлечь нельзя]\n"
         else:
@@ -106,15 +103,10 @@ def _attachments_to_text(attachments):
 # ============================================================
 
 def ask_gpt(question, attachments):
-    """
-    question: строка
+    """        question: строка
     attachments: список файлов Google Drive, см. _attachments_to_text
-    """
+    """        files_text = _attachments_to_text(attachments)
 
-    # Конвертация файлов в текст
-    files_text = _attachments_to_text(attachments)
-
-    # Готовим тело запроса
     if files_text:
         user_text = (
             f"Вопрос пользователя:\n{question}\n\n"
@@ -124,17 +116,14 @@ def ask_gpt(question, attachments):
     else:
         user_text = question
 
-    # Формируем messages
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user",   "content": user_text}
     ]
 
-    # Выполняем запрос
     response = client.responses.create(
         model="gpt-5",
         input=messages
     )
 
-    # Возвращаем текст
     return response.output_text
