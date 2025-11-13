@@ -8,7 +8,8 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # FREEDOM ASSISTANT — системный промпт
 # ============================================================
 
-SYSTEM_PROMPT = """    Ты — Freedom Assistant, интеллектуальный помощник экосистемы Freedom Holding Corp.
+SYSTEM_PROMPT = """
+Ты — Freedom Assistant, интеллектуальный помощник экосистемы Freedom Holding Corp.
 Ты работаешь как эксперт по всем направлениям холдинга и одновременно используешь
 подключённую базу знаний из Google Drive (RAG) через файлы, которые передаются в запросе.
 
@@ -53,16 +54,20 @@ SYSTEM_PROMPT = """    Ты — Freedom Assistant, интеллектуальн�
 # ============================================================
 
 def _attachments_to_text(attachments):
-    """        attachments = список:
+    """
+    attachments — список словарей:
     [
         {
             "data": b"...",            # содержимое файла
             "mime_type": "text/plain", # MIME тип
             "filename": "file.txt"     # имя файла
-        }
+        },
+        ...
     ]
+
     Превращаем файлы в текстовые блоки для промпта.
-    """        if not attachments:
+    """
+    if not attachments:
         return ""
 
     result_parts = []
@@ -103,9 +108,11 @@ def _attachments_to_text(attachments):
 # ============================================================
 
 def ask_gpt(question, attachments):
-    """        question: строка
+    """
+    question: строка с вопросом пользователя
     attachments: список файлов Google Drive, см. _attachments_to_text
-    """        files_text = _attachments_to_text(attachments)
+    """
+    files_text = _attachments_to_text(attachments)
 
     if files_text:
         user_text = (
@@ -118,12 +125,12 @@ def ask_gpt(question, attachments):
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": user_text}
+        {"role": "user",   "content": user_text},
     ]
 
     response = client.responses.create(
         model="gpt-5",
-        input=messages
+        input=messages,
     )
 
     return response.output_text
