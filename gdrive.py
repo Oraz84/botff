@@ -1,6 +1,7 @@
 import io
 import json
 import time
+
 import numpy as np
 from pypdf import PdfReader
 from docx import Document
@@ -31,8 +32,8 @@ drive = build("drive", "v3", credentials=creds)
 # Caching
 # ===========================================
 
-CACHE_META_TTL = 600       # 10 мин обновление списка файлов
-CACHE_EMB_TTL = 3600 * 24  # 24 часа эмбеддинги
+CACHE_META_TTL = 600       # 10 мин — кэш списка файлов
+CACHE_EMB_TTL = 3600 * 24  # 24 часа — кэш эмбеддингов
 
 CACHE_META = {"timestamp": 0, "items": []}
 CACHE_EMB = {}
@@ -43,12 +44,13 @@ CACHE_EMB = {}
 # ===========================================
 
 def load_file_list():
+    """Загружаем список файлов из папки Google Drive с кэшированием."""
     now = time.time()
 
     if now - CACHE_META["timestamp"] < CACHE_META_TTL:
         return CACHE_META["items"]
 
-    query = f"'{GOOGLE_DRIVE_FOLDER}' in parents and trashed=false"
+    query = f"'{GOOGLE_DRIVE_FOLDER}' in parents and trashed = false"
     results = drive.files().list(
         q=query,
         fields="files(id,name,mimeType)"
@@ -65,7 +67,8 @@ def load_file_list():
 # Download File
 # ===========================================
 
-def download_file_raw(file_id):
+def download_file_raw(file_id: str) -> bytes:
+    """Скачиваем файл из Google Drive в виде байтов."""
     request = drive.files().get_media(fileId=file_id)
     return request.execute()
 
@@ -74,25 +77,37 @@ def download_file_raw(file_id):
 # Extract Text from File
 # ===========================================
 
-def extract_text(file_bytes, mime, filename):
-    """Пытаемся извлечь текст из PDF / DOCX / TXT."""        if mime == "text/plain":
+def extract_text(file_bytes: bytes, mime: str, filename: str) -> str:
+    """
+    Пытаемся извлечь текст из файла.
+    Поддерживаем:
+      - text/plain
+      - application/pdf
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document (DOCX)
+    Остальное считаем бинарным и не индексируем.
+    """
+    if mime == "text/plain":
         return file_bytes.decode("utf-8", errors="ignore")
 
     if mime == "application/pdf":
         try:
             reader = PdfReader(io.BytesIO(file_bytes))
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
+            texts = []
+            for page in reader.pages:
+                page_text = page.extract_text() or ""
+                texts.append(page_text)
+            return "\n".join(texts)
         except Exception:
             return ""
 
-    if mime in ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+    if mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         try:
             doc = Document(io.BytesIO(file_bytes))
             return "\n".join(p.text for p in doc.paragraphs)
         except Exception:
             return ""
 
-    # Фоллбек: бинарные файлы не индексируем
+    # Фоллбек: остальные типы не индексируем
     return ""
 
 
@@ -100,14 +115,15 @@ def extract_text(file_bytes, mime, filename):
 # Embeddings
 # ===========================================
 
-def embed_text(text):
-    """Вычисляем эмбеддинг для текста."""        text = (text or "").strip()
+def embed_text(text: str):
+    """Получаем эмбеддинг для текста через OpenAI."""
+    text = (text or "").strip()
     if not text:
         return None
 
     resp = client.embeddings.create(
         model="text-embedding-3-small",
-        input=text[:15000]
+        input=text[:15000],  # ограничиваем длину
     )
     return np.array(resp.data[0].embedding, dtype=np.float32)
 
@@ -116,21 +132,25 @@ def embed_text(text):
 # Build index: text + embeddings
 # ===========================================
 
-def build_embedding_for_file(f):
-    """Создаём/обновляем embedding для файла."""        now = time.time()
-    file_id = f["id"]
-    mime = f.get("mimeType", "")
-    name = f.get("name", "")
+def build_embedding_for_file(file_meta: dict) -> dict:
+    """
+    Создаём/обновляем embedding для файла.
+    file_meta: dict с ключами id, name, mimeType.
+    """
+    now = time.time()
+    file_id = file_meta["id"]
+    mime = file_meta.get("mimeType", "")
+    name = file_meta.get("name", "")
 
-    # если в кэше свежий — используем
+    # Если в кэше есть свежий embedding — возвращаем его
     if file_id in CACHE_EMB:
         entry = CACHE_EMB[file_id]
         if now - entry["ts"] < CACHE_EMB_TTL:
             return entry
 
-    # иначе — загружаем файл и извлекаем текст
-    file_bytes = download_file_raw(file_id)
-    text = extract_text(file_bytes, mime, name)
+    # Иначе скачиваем файл и извлекаем текст
+    raw_bytes = download_file_raw(file_id)
+    text = extract_text(raw_bytes, mime, name)
     emb = embed_text(text)
 
     entry = {
@@ -150,8 +170,9 @@ def build_embedding_for_file(f):
 # Semantic Search
 # ===========================================
 
-def semantic_search(query, top_k=3):
-    """Возвращает самые релевантные файлы по смыслу."""        files = load_file_list()
+def semantic_search(query: str, top_k: int = 3):
+    """Возвращает top_k самых релевантных файлов по смыслу."""
+    files = load_file_list()
     if not files:
         return []
 
@@ -168,39 +189,45 @@ def semantic_search(query, top_k=3):
             continue
 
         denom = float(np.linalg.norm(q_emb) * np.linalg.norm(emb))
-        if denom == 0:
+        if denom == 0.0:
             continue
 
         score = float(np.dot(q_emb, emb) / denom)
         results.append((score, entry))
 
-    results.sort(reverse=True, key=lambda x: x[0])
-    return [e for score, e in results[:top_k]]
+    # сортируем по убыванию похожести
+    results.sort(key=lambda x: x[0], reverse=True)
+
+    return [entry for score, entry in results[:top_k]]
 
 
 # ===========================================
 # API для webhook_bot.py
 # ===========================================
 
-def search_files(query):
-    """        Интерфейс для бота:
-    возвращает список словарей:
+def search_files(query: str):
+    """
+    Интерфейс для бота.
+    Возвращает список словарей формата:
     {
         "id": ...,
         "name": ...,
         "mimeType": ...,
-        "data": <bytes>
+        "data": <bytes>,
     }
-    """        entries = semantic_search(query, top_k=3)
+    """
+    entries = semantic_search(query, top_k=3)
     results = []
 
     for e in entries:
         raw = download_file_raw(e["id"])
-        results.append({
-            "id": e["id"],
-            "name": e["name"],
-            "mimeType": e["mime"],
-            "data": raw,
-        })
+        results.append(
+            {
+                "id": e["id"],
+                "name": e["name"],
+                "mimeType": e["mime"],
+                "data": raw,
+            }
+        )
 
     return results
