@@ -1,0 +1,7 @@
+import os, json
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+GOOGLE_SERVICE_ACCOUNT = json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"))
+GOOGLE_DRIVE_FOLDER_ID = "1zd9w6uiHhIzxI1JXciMXiVZ_aStThcTa"
